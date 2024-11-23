@@ -249,6 +249,18 @@
             width: 100%;
         }
 
+        #model-select {
+            width: 200px;
+            margin: 0 auto;
+            display: block;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #ffffff;
+            font-size: 14px;
+        }
+
         @media (max-width: 600px) {
             body {
                 padding: 12px;
@@ -286,7 +298,15 @@
     <div class="container">
         <header>
             <h1 style="text-align: center; font-size: 3rem; margin-bottom: 0;">1919 LOCAL</h1>
+            <nav>
+                <a href="#chat" class="nav-item active" onclick="showPage('chat')">Chat</a>
+                <a href="#settings" class="nav-item" onclick="showPage('settings')">Settings</a>
+                <a href="#api" class="nav-item" onclick="showPage('api')">API</a>
+            </nav>
         </header>
+        <select id="model-select">
+            <option value="mistral">mistral</option>
+        </select>
         <div class="chat-window">
             <div id="chat-history">
             </div>
@@ -298,6 +318,8 @@
     </div>
 
     <script>
+        const OLLAMA_API = 'http://localhost:11434/api';
+        
         let chatHistory = [];
 
         // Load chat history from localStorage on page load
@@ -305,9 +327,59 @@
             const savedHistory = localStorage.getItem('chatHistory');
             if (savedHistory) {
                 chatHistory = JSON.parse(savedHistory);
-                chatHistory.forEach(msg => addMessageToChat(msg.message, msg.className, false));
+                chatHistory.forEach(item => {
+                    addMessageToChat(item.message, item.className, false);
+                });
             }
         });
+
+        // Fetch available models
+        async function fetchModels() {
+            const select = document.getElementById('model-select');
+            select.innerHTML = '<option value="" disabled selected>Loading models...</option>';
+            
+            try {
+                const response = await fetch(`${OLLAMA_API}/tags`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch models');
+                }
+                
+                const data = await response.json();
+                select.innerHTML = ''; // Clear loading message
+                
+                if (!data.models || data.models.length === 0) {
+                    select.innerHTML = '<option value="" disabled selected>No models found - Please pull a model in Ollama first</option>';
+                    return;
+                }
+
+                // Sort models alphabetically
+                data.models.sort((a, b) => a.name.localeCompare(b.name));
+                
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    option.textContent = `${model.name} (${formatSize(model.size)})`;
+                    select.appendChild(option);
+                });
+
+                // Select first model by default if none selected
+                if (!select.value && data.models.length > 0) {
+                    select.value = data.models[0].name;
+                }
+            } catch (error) {
+                console.error('Error fetching models:', error);
+                select.innerHTML = '<option value="" disabled selected>Error loading models - Is Ollama running?</option>';
+                addMessageToChat('Error: Failed to fetch models. Make sure Ollama is running.', 'error');
+            }
+        }
+
+        // Helper function to format file sizes
+        function formatSize(bytes) {
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            if (bytes === 0) return '0 B';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+        }
 
         function addMessageToChat(message, className, save = true) {
             const history = document.getElementById('chat-history');
@@ -345,6 +417,9 @@
             const prompt = promptInput.value.trim();
             if (!prompt) return;
 
+            const modelSelect = document.getElementById('model-select');
+            const model = modelSelect.value;
+            
             // Add user message to chat
             addMessageToChat(prompt, 'user-message');
             promptInput.value = '';
@@ -357,6 +432,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
+                        model: model,
                         prompt: prompt
                     })
                 });
@@ -379,13 +455,15 @@
             this.style.height = Math.min(this.scrollHeight, 120) + 'px';
         });
 
-        // Handle "Enter" to send message
-        document.getElementById('prompt-input').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+        // Handle Enter key in input
+        document.getElementById('prompt-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
                 sendMessage();
             }
         });
+
+        // Initial load
+        fetchModels();
     </script>
 </body>
 </html>
