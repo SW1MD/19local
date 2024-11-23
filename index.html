@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Chat</title>
+    <style>
+        :root {
+            --bg-primary: #1e1e1e;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #363636;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --accent-color: #4a9eff;
+            --accent-hover: #3b7fd4;
+            --border-color: #404040;
+            /* Modern gradient colors */
+            --message-user-gradient1: #a960ee;  /* Purple */
+            --message-user-gradient2: #4dffa7;  /* Mint Green */
+            --message-bot-gradient1: #ff6b9f;   /* Pink */
+            --message-bot-gradient2: #ffb86c;   /* Orange */
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            padding: 0 20px;
+            width: 100%;
+        }
+
+        .chat-window {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+        }
+
+        #chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 10px;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .message {
+            margin: 0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            line-height: 1.5;
+            position: relative;
+            color: #ffffff;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+            font-weight: 500;
+            width: 350px;
+            word-wrap: break-word;
+            align-self: flex-start;
+        }
+
+        .message::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: rgba(0, 0, 0, 0.4);
+            pointer-events: none;
+        }
+
+        .message span {
+            position: relative;
+            z-index: 1;
+        }
+
+        .user-message {
+            background: linear-gradient(120deg, rgba(169, 96, 238, 0.8) 0%, rgba(77, 255, 167, 0.8) 100%);
+            align-self: flex-end;
+        }
+
+        .bot-message {
+            background: linear-gradient(120deg, rgba(255, 107, 159, 0.8) 0%, rgba(255, 184, 108, 0.8) 100%);
+        }
+
+        .error {
+            background: rgba(0, 0, 0, 0.7);
+            margin-left: auto !important;
+            margin-right: auto !important;
+            color: #ff4444;
+        }
+
+        .input-container {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        #prompt-input {
+            flex: 1;
+            min-width: 200px;
+            resize: none;
+            min-height: 42px;
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* Custom scrollbar for input */
+        #prompt-input::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        #prompt-input::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+        }
+
+        #prompt-input::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+
+        #prompt-input::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Custom scrollbar for chat history */
+        #chat-history::-webkit-scrollbar {
+            width: 8px;
+            background: transparent;
+        }
+
+        #chat-history::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+
+        #chat-history::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+
+        #chat-history::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        /* Firefox scrollbar */
+        #chat-history {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
+        }
+
+        input, select, textarea, button {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            color: #ffffff;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        select {
+            min-width: 150px;
+        }
+
+        button {
+            white-space: nowrap;
+            cursor: pointer;
+            background: var(--accent-color);
+            border: none;
+            font-weight: 500;
+        }
+
+        nav {
+            max-width: 800px;
+            margin: 20px auto;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            width: 100%;
+        }
+
+        .nav-item {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            font-weight: 500;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .nav-item.active {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        #chat-page {
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        #settings-page,
+        #api-page {
+            max-width: 500px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        #model-select {
+            width: 200px;
+            margin: 0 auto;
+            display: block;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: #ffffff;
+            font-size: 14px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 12px;
+            }
+
+            .message {
+                width: 90%;
+            }
+
+            .input-container {
+                gap: 8px;
+            }
+
+            input, select, button {
+                width: 100%;
+            }
+
+            nav {
+                padding: 8px;
+                gap: 8px;
+            }
+
+            .nav-item {
+                padding: 6px 12px;
+                font-size: 14px;
+            }
+
+            .chat-window {
+                height: 70vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 style="text-align: center; font-size: 3rem; margin-bottom: 0;">1919 LOCAL</h1>
+            <nav>
+                <a href="#chat" class="nav-item active" onclick="showPage('chat')">Chat</a>
+                <a href="#settings" class="nav-item" onclick="showPage('settings')">Settings</a>
+                <a href="#api" class="nav-item" onclick="showPage('api')">API</a>
+            </nav>
+        </header>
+        <select id="model-select">
+            <option value="llama2">Loading models...</option>
+        </select>
+        <div class="chat-window">
+            <div id="chat-history">
+            </div>
+            <div class="input-container">
+                <textarea id="prompt-input" placeholder="Type your message..." rows="1"></textarea>
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const OLLAMA_API = 'http://localhost:11434/api';
+        
+        let chatHistory = [];
+
+        // Load chat history from localStorage on page load
+        window.addEventListener('load', () => {
+            const savedHistory = localStorage.getItem('chatHistory');
+            if (savedHistory) {
+                chatHistory = JSON.parse(savedHistory);
+                chatHistory.forEach(item => {
+                    addMessageToChat(item.message, item.className, false);
+                });
+            }
+        });
+
+        // Fetch available models
+        async function fetchModels() {
+            const select = document.getElementById('model-select');
+            select.innerHTML = '<option value="" disabled selected>Loading models...</option>';
+            
+            try {
+                const response = await fetch(`${OLLAMA_API}/tags`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch models');
+                }
+                
+                const data = await response.json();
+                select.innerHTML = ''; // Clear loading message
+                
+                if (!data.models || data.models.length === 0) {
+                    select.innerHTML = '<option value="" disabled selected>No models found - Please pull a model in Ollama first</option>';
+                    return;
+                }
+
+                // Sort models alphabetically
+                data.models.sort((a, b) => a.name.localeCompare(b.name));
+                
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.name;
+                    option.textContent = `${model.name} (${formatSize(model.size)})`;
+                    select.appendChild(option);
+                });
+
+                // Select first model by default if none selected
+                if (!select.value && data.models.length > 0) {
+                    select.value = data.models[0].name;
+                }
+            } catch (error) {
+                console.error('Error fetching models:', error);
+                select.innerHTML = '<option value="" disabled selected>Error loading models - Is Ollama running?</option>';
+                addMessageToChat('Error: Failed to fetch models. Make sure Ollama is running.', 'error');
+            }
+        }
+
+        // Helper function to format file sizes
+        function formatSize(bytes) {
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            if (bytes === 0) return '0 B';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+        }
+
+        function addMessageToChat(message, className, save = true) {
+            const history = document.getElementById('chat-history');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${className}`;
+            const messageSpan = document.createElement('span');
+            
+            // Convert markdown code blocks
+            message = message.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
+                return `\n\`\`\`${lang || ''}\n${code.trim()}\n\`\`\``;
+            });
+            
+            // Preserve line breaks
+            messageSpan.innerHTML = message
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/```(\w+)?\n([\s\S]*?)\n```/g, function(match, lang, code) {
+                    return `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`;
+                })
+                .replace(/\n/g, '<br>');
+            
+            messageDiv.appendChild(messageSpan);
+            history.appendChild(messageDiv);
+            history.scrollTop = history.scrollHeight;
+
+            if (save) {
+                chatHistory.push({ message, className });
+                localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+            }
+        }
+
+        async function sendMessage() {
+            const promptInput = document.getElementById('prompt-input');
+            const prompt = promptInput.value.trim();
+            if (!prompt) return;
+
+            const modelSelect = document.getElementById('model-select');
+            const model = modelSelect.value;
+            
+            // Get current settings
+            const temperature = parseFloat(document.getElementById('temperature').value) || 0.7;
+            const context_length = parseInt(document.getElementById('max-context').value) || 4096;
+            const apiUrl = document.getElementById('api-url').value.trim();
+            const apiKey = document.getElementById('api-key').value.trim();
+
+            // Add user message to chat
+            addMessageToChat(prompt, 'user-message');
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+
+            try {
+                const response = await fetch(`${apiUrl}/api/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(apiKey && { 'Authorization': `Bearer ${apiKey}` })
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        prompt: prompt,
+                        temperature: temperature,
+                        context_length: context_length,
+                        stream: false
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to get response from Ollama');
+                }
+
+                const data = await response.json();
+                // Format the response to handle code blocks and line breaks
+                addMessageToChat(data.response, 'bot-message');
+            } catch (error) {
+                console.error('Error:', error);
+                addMessageToChat('Error: Failed to get response. Make sure Ollama is running.', 'error');
+            }
+        }
+
+        // Auto-resize textarea
+        document.getElementById('prompt-input').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+
+        // Handle Enter key in input
+        document.getElementById('prompt-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initial load
+        fetchModels();
+    </script>
+</body>
+</html>
