@@ -339,7 +339,13 @@
             select.innerHTML = '<option value="" disabled selected>Loading models...</option>';
             
             try {
-                const response = await fetch(`${OLLAMA_API}/tags`);
+                const response = await fetch(`${OLLAMA_API}/tags`, {
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
+                    }
+                });
                 if (!response.ok) {
                     throw new Error('Failed to fetch models');
                 }
@@ -426,10 +432,13 @@
             promptInput.style.height = 'auto';
 
             try {
-                const response = await fetch('http://localhost:11434/api/generate', {
+                const response = await fetch(`${OLLAMA_API}/generate`, {
                     method: 'POST',
+                    mode: 'cors',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Access-Control-Allow-Origin': '*'
                     },
                     body: JSON.stringify({
                         model: model,
