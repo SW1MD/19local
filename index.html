@@ -94,6 +94,7 @@
         .message span {
             position: relative;
             z-index: 1;
+            white-space: pre-wrap;
         }
 
         .user-message {
@@ -304,25 +305,59 @@
                 <a href="#api" class="nav-item" onclick="showPage('api')">API</a>
             </nav>
         </header>
-        <select id="model-select">
-            <option value="mistral">mistral</option>
-        </select>
-        <div class="chat-window">
-            <div id="chat-history">
+        <div id="chat-page">
+            <select id="model-select">
+                <option value="mistral">mistral</option>
+            </select>
+            <div class="chat-window">
+                <div id="chat-history">
+                </div>
+                <div class="input-container">
+                    <textarea id="prompt-input" placeholder="Type your message..." rows="1"></textarea>
+                    <button onclick="sendMessage()">Send</button>
+                </div>
             </div>
-            <div class="input-container">
-                <textarea id="prompt-input" placeholder="Type your message..." rows="1"></textarea>
-                <button onclick="sendMessage()">Send</button>
+        </div>
+        <div id="settings-page" style="display:none">
+            <h2>Settings</h2>
+            <div style="display:flex; gap:12px; align-items:center;">
+                <label for="api-url-input">Ollama API URL</label>
+                <input id="api-url-input" type="text" placeholder="http://localhost:11434/api" style="flex:1;">
+                <button onclick="saveApiUrl()">Save</button>
             </div>
+        </div>
+        <div id="api-page" style="display:none">
+            <h2>API</h2>
+            <p>Use the chat to send prompts to the configured Ollama server.</p>
         </div>
     </div>
 
     <script>
-        const OLLAMA_API = 'http://swim.local:11434/api';
+        let OLLAMA_API = localStorage.getItem('ollamaApiUrl') || 'http://swim.local:11434/api';
         
         let chatHistory = [];
 
-        // Load chat history from localStorage on page load
+        // Simple in-page router and initializers
+        function showPage(page) {
+            const pages = ['chat', 'settings', 'api'];
+            pages.forEach(name => {
+                const el = document.getElementById(`${name}-page`);
+                if (el) el.style.display = (name === page) ? '' : 'none';
+            });
+            document.querySelectorAll('nav .nav-item').forEach(a => a.classList.remove('active'));
+            const active = document.querySelector(`nav .nav-item[href="#${page}"]`);
+            if (active) active.classList.add('active');
+            if (location.hash !== `#${page}`) {
+                history.replaceState(null, '', `#${page}`);
+            }
+        }
+
+        window.addEventListener('hashchange', () => {
+            const page = (location.hash || '#chat').replace('#', '');
+            showPage(page);
+        });
+
+        // Load chat history and init UI on page load
         window.addEventListener('load', () => {
             const savedHistory = localStorage.getItem('chatHistory');
             if (savedHistory) {
@@ -331,6 +366,19 @@
                     addMessageToChat(item.message, item.className, false);
                 });
             }
+
+            const apiInput = document.getElementById('api-url-input');
+            if (apiInput) apiInput.value = OLLAMA_API;
+
+            const modelSelect = document.getElementById('model-select');
+            if (modelSelect) {
+                modelSelect.addEventListener('change', () => {
+                    localStorage.setItem('selectedModel', modelSelect.value);
+                });
+            }
+
+            const initialPage = (location.hash || '#chat').replace('#', '');
+            showPage(initialPage);
         });
 
         // Fetch available models
@@ -368,7 +416,10 @@
                 });
 
                 // Select first model by default if none selected
-                if (!select.value && data.models.length > 0) {
+                const savedModel = localStorage.getItem('selectedModel');
+                if (savedModel && data.models.some(m => m.name === savedModel)) {
+                    select.value = savedModel;
+                } else if (!select.value && data.models.length > 0) {
                     select.value = data.models[0].name;
                 }
             } catch (error) {
@@ -392,20 +443,16 @@
             messageDiv.className = `message ${className}`;
             const messageSpan = document.createElement('span');
             
-            // Convert markdown code blocks
-            message = message.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
-                return `\n\`\`\`${lang || ''}\n${code.trim()}\n\`\`\``;
-            });
-            
-            // Preserve line breaks
-            messageSpan.innerHTML = message
+            const escaped = message
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/```(\w+)?\n([\s\S]*?)\n```/g, function(match, lang, code) {
-                    return `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`;
-                })
-                .replace(/\n/g, '<br>');
+                .replace(/>/g, '&gt;');
+
+            const withCodeBlocks = escaped.replace(/```(\w+)?\n([\s\S]*?)\n```/g, function(match, lang, code) {
+                return `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`;
+            });
+
+            messageSpan.innerHTML = withCodeBlocks;
             
             messageDiv.appendChild(messageSpan);
             history.appendChild(messageDiv);
@@ -462,12 +509,23 @@
             this.style.height = Math.min(this.scrollHeight, 120) + 'px';
         });
 
-        // Handle Enter key in input
-        document.getElementById('prompt-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
+        // Handle Enter key in input (Shift+Enter for newline)
+        document.getElementById('prompt-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
                 sendMessage();
             }
         });
+
+        function saveApiUrl() {
+            const input = document.getElementById('api-url-input');
+            if (!input) return;
+            const value = input.value.trim();
+            if (!value) return;
+            localStorage.setItem('ollamaApiUrl', value);
+            OLLAMA_API = value;
+            fetchModels();
+        }
 
         // Initial load
         fetchModels();
