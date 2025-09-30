@@ -249,6 +249,14 @@
             width: 100%;
         }
 
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
         #model-select {
             width: 200px;
             margin: 0 auto;
@@ -299,38 +307,145 @@
         <header>
             <h1 style="text-align: center; font-size: 3rem; margin-bottom: 0;">1919 LOCAL</h1>
             <nav>
-                <a href="#chat" class="nav-item active" onclick="showPage('chat')">Chat</a>
-                <a href="#settings" class="nav-item" onclick="showPage('settings')">Settings</a>
-                <a href="#api" class="nav-item" onclick="showPage('api')">API</a>
+                <a href="#chat" class="nav-item active" onclick="return showPage('chat')">Chat</a>
+                <a href="#settings" class="nav-item" onclick="return showPage('settings')">Settings</a>
+                <a href="#api" class="nav-item" onclick="return showPage('api')">API</a>
             </nav>
         </header>
-        <select id="model-select">
-            <option value="mistral">mistral</option>
-        </select>
-        <div class="chat-window">
-            <div id="chat-history">
+        <div id="chat-page" class="page active">
+            <select id="model-select">
+                <option value="mistral">mistral</option>
+            </select>
+            <div class="chat-window">
+                <div id="chat-history">
+                </div>
+                <div class="input-container">
+                    <textarea id="prompt-input" placeholder="Type your message..." rows="1"></textarea>
+                    <button id="send-button" onclick="sendMessage()">Send</button>
+                </div>
             </div>
-            <div class="input-container">
-                <textarea id="prompt-input" placeholder="Type your message..." rows="1"></textarea>
-                <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <div id="settings-page" class="page">
+            <div style="margin-top: 16px;">
+                <label for="api-base-input" style="display: block; margin-bottom: 8px;">Ollama API Base URL</label>
+                <input id="api-base-input" type="text" placeholder="http://localhost:11434/api" />
+                <button id="save-api-button">Save</button>
             </div>
+            <p style="margin-top: 12px; color: var(--text-secondary);">Update and save, then models will reload.</p>
+        </div>
+
+        <div id="api-page" class="page">
+            <p>Use the selected model via the API:</p>
+            <pre><code id="curl-example"></code></pre>
         </div>
     </div>
 
     <script>
-        const OLLAMA_API = 'http://swim.local:11434/api';
+        let OLLAMA_API = localStorage.getItem('OLLAMA_API') || 'http://swim.local:11434/api';
         
         let chatHistory = [];
 
+        function sanitizeLang(lang) {
+            return (lang || 'text').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        }
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function renderMessageToHtml(message) {
+            const blocks = [];
+            const tokenFor = (i) => `@@CODE_BLOCK_${i}@@`;
+            const withTokens = message.replace(/```(\w+)?\n([\s\S]*?)```/g, function(_, lang, code) {
+                const index = blocks.length;
+                blocks.push({ lang: sanitizeLang(lang), code: code.trim() });
+                return tokenFor(index);
+            });
+            let safe = escapeHtml(withTokens).replace(/\n/g, '<br>');
+            blocks.forEach((b, i) => {
+                const html = `<pre><code class="language-${b.lang}">${escapeHtml(b.code)}</code></pre>`;
+                safe = safe.replace(tokenFor(i), html);
+            });
+            return safe;
+        }
+
+        function setOllamaApi(base) {
+            const trimmed = (base || '').trim();
+            if (!trimmed) return;
+            OLLAMA_API = trimmed.replace(/\/+$/, '');
+            localStorage.setItem('OLLAMA_API', OLLAMA_API);
+            fetchModels();
+            updateCurlExample();
+        }
+
+        function showPage(page) {
+            const pages = ['chat', 'settings', 'api'];
+            pages.forEach(p => {
+                const el = document.getElementById(`${p}-page`);
+                if (el) {
+                    el.classList.toggle('active', p === page);
+                }
+            });
+            document.querySelectorAll('nav .nav-item').forEach(link => {
+                const target = (link.getAttribute('href') || '').replace('#', '');
+                link.classList.toggle('active', target === page);
+            });
+            if (location.hash !== `#${page}`) {
+                location.hash = `#${page}`;
+            }
+            if (page === 'api') {
+                updateCurlExample();
+            }
+            return false;
+        }
+
+        function initRouting() {
+            const initial = (location.hash || '#chat').slice(1);
+            showPage(initial);
+            window.addEventListener('hashchange', () => {
+                const p = (location.hash || '#chat').slice(1);
+                showPage(p);
+            });
+        }
+
+        function updateCurlExample() {
+            const select = document.getElementById('model-select');
+            const model = (select && select.value) ? select.value : 'mistral';
+            const example = `curl -s ${OLLAMA_API}/generate -d '{"model":"${model}","prompt":"Hello","stream":false}'`;
+            const code = document.getElementById('curl-example');
+            if (code) {
+                code.textContent = example;
+            }
+        }
+
         // Load chat history from localStorage on page load
         window.addEventListener('load', () => {
-            const savedHistory = localStorage.getItem('chatHistory');
-            if (savedHistory) {
-                chatHistory = JSON.parse(savedHistory);
-                chatHistory.forEach(item => {
-                    addMessageToChat(item.message, item.className, false);
-                });
+            try {
+                const savedHistory = localStorage.getItem('chatHistory');
+                if (savedHistory) {
+                    chatHistory = JSON.parse(savedHistory);
+                    chatHistory.forEach(item => {
+                        addMessageToChat(item.message, item.className, false);
+                    });
+                }
+            } catch (_) {}
+            const apiInput = document.getElementById('api-base-input');
+            if (apiInput) {
+                apiInput.value = OLLAMA_API;
             }
+            const saveBtn = document.getElementById('save-api-button');
+            if (saveBtn && apiInput) {
+                saveBtn.addEventListener('click', () => setOllamaApi(apiInput.value));
+            }
+            const modelSelect = document.getElementById('model-select');
+            if (modelSelect) {
+                modelSelect.addEventListener('change', updateCurlExample);
+            }
+            initRouting();
         });
 
         // Fetch available models
@@ -391,21 +506,7 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${className}`;
             const messageSpan = document.createElement('span');
-            
-            // Convert markdown code blocks
-            message = message.replace(/```(\w+)?\n([\s\S]*?)```/g, function(match, lang, code) {
-                return `\n\`\`\`${lang || ''}\n${code.trim()}\n\`\`\``;
-            });
-            
-            // Preserve line breaks
-            messageSpan.innerHTML = message
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/```(\w+)?\n([\s\S]*?)\n```/g, function(match, lang, code) {
-                    return `<pre><code class="language-${lang || 'text'}">${code.trim()}</code></pre>`;
-                })
-                .replace(/\n/g, '<br>');
+            messageSpan.innerHTML = renderMessageToHtml(message);
             
             messageDiv.appendChild(messageSpan);
             history.appendChild(messageDiv);
@@ -440,7 +541,8 @@
                     },
                     body: JSON.stringify({
                         model: model,
-                        prompt: prompt
+                        prompt: prompt,
+                        stream: false
                     })
                 });
 
@@ -449,7 +551,8 @@
                 }
 
                 const data = await response.json();
-                addMessageToChat(data.response, 'bot-message');
+                const botText = (data && typeof data.response === 'string') ? data.response : JSON.stringify(data);
+                addMessageToChat(botText, 'bot-message');
             } catch (error) {
                 console.error('Error:', error);
                 addMessageToChat('Error: Failed to get response. Make sure Ollama is running on port 11434.', 'error');
@@ -463,14 +566,16 @@
         });
 
         // Handle Enter key in input
-        document.getElementById('prompt-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
+        document.getElementById('prompt-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                e.preventDefault();
                 sendMessage();
             }
         });
 
         // Initial load
         fetchModels();
+        updateCurlExample();
     </script>
 </body>
 </html>
